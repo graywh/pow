@@ -1,6 +1,6 @@
 async         = require 'async'
 fs            = require 'fs'
-{print}       = require 'sys'
+{print}       = require 'util'
 {spawn, exec} = require 'child_process'
 
 build = (watch, callback) ->
@@ -21,7 +21,7 @@ buildTemplates = (callback) ->
     (callback) ->
       fs.readFile "src/templates/#{name}.eco", "utf8", (err, data) ->
         if err then callback err
-        else fs.writeFile "lib/templates/#{name}.js", eco.compile(data), callback
+        else fs.writeFile "lib/templates/#{name}.js", "module.exports = #{eco.precompile(data)}", callback
 
   async.parallel [
     compile("http_server/application_not_found.html")
@@ -29,6 +29,7 @@ buildTemplates = (callback) ->
     compile("http_server/layout.html")
     compile("http_server/proxy_error.html")
     compile("http_server/rackup_file_missing.html")
+    compile("http_server/rvm_deprecation_notice.html")
     compile("http_server/welcome.html")
     compile("installer/cx.pow.firewall.plist")
     compile("installer/cx.pow.powd.plist")

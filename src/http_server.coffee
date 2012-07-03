@@ -29,11 +29,11 @@ module.exports = class HttpServer extends connect.HTTPServer
   x = (fn) -> (err, req, res, next) -> fn err, req, res, next
 
   # Helper that loads the named template, creates a new context from
-  # the given context with itself and an optional `yield` block, and
-  # passes that to the template for rendering.
-  renderTemplate = (templateName, renderContext, yield) ->
+  # the given context with itself and an optional `yieldContents`
+  # block, and passes that to the template for rendering.
+  renderTemplate = (templateName, renderContext, yieldContents) ->
     template = require "./templates/http_server/#{templateName}.html"
-    context = {renderTemplate, yield}
+    context = {renderTemplate, yieldContents}
     context[key] = value for key, value of renderContext
     template context
 
@@ -56,6 +56,7 @@ module.exports = class HttpServer extends connect.HTTPServer
       o @handleStaticRequest
       o @findRackApplication
       o @handleProxyRequest
+      o @handleRvmDeprecationRequest
       o @handleApplicationRequest
       x @handleErrorStartingApplication
       o @handleFaviconRequest
@@ -170,7 +171,7 @@ module.exports = class HttpServer extends connect.HTTPServer
     exists join(root, "config.ru"), (rackConfigExists) =>
       if rackConfigExists
         req.pow.application = @rackApplications[root] ?=
-          new RackApplication @configuration, root
+          new RackApplication @configuration, root, req.pow.host
 
       # If `config.ru` isn't present but there's an existing
       # `RackApplication` for the root, terminate the application and
@@ -200,6 +201,8 @@ module.exports = class HttpServer extends connect.HTTPServer
       method: req.method
       url: "#{req.pow.url}#{req.url}"
       headers: headers
+      jar: false
+      followRedirect: false
 
     req.pipe proxy
     proxy.pipe res
@@ -209,6 +212,34 @@ module.exports = class HttpServer extends connect.HTTPServer
         {err, hostname, port}
 
     req.pow.resume()
+
+  # Handle requests for the mini-app that serves RVM deprecation
+  # notices. Manually requesting `/__pow__/rvm_deprecation` on any
+  # Rack app will show the notice. The notice is automatically
+  # displayed in a separate browser window by `RackApplication` the
+  # first time you load an app with an `.rvmrc` file.
+  handleRvmDeprecationRequest: (req, res, next) =>
+    return next() unless application = req.pow.application
+
+    if match = req.url.match /^\/__pow__\/rvm_deprecation(.*)/
+      action = match[1]
+      return next() unless action is "" or req.method is "POST"
+
+      switch action
+        when ""
+          true
+        when "/add_to_powrc"
+          application.writeRvmBoilerplate()
+        when "/enable"
+          @configuration.enableRvmDeprecationNotices()
+        when "/disable"
+          @configuration.disableRvmDeprecationNotices()
+        else
+          return next()
+      renderResponse res, 200, "rvm_deprecation_notice",
+        boilerplate: RackApplication.rvmBoilerplate
+    else
+      next()
 
   # If the request object is annotated with an application, pass the
   # request off to the application's `handle` method.

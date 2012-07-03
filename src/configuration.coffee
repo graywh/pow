@@ -105,17 +105,23 @@ module.exports = class Configuration
     @extDomains = @extDomains.split?(",") ? @extDomains
     @allDomains = @domains.concat @extDomains
 
+    # Support *.xip.io top-level domains.
+    @allDomains.push /\d+\.\d+\.\d+\.\d+\.xip\.io$/, /[0-9a-z]{1,7}\.xip\.io$/
+
+    # Runtime support files live in `~/Library/Application Support/Pow`.
+    @supportRoot = libraryPath "Pow"
+
     # `POW_HOST_ROOT`: path to the directory containing symlinks to
     # applications that will be served by Pow. Defaults to
     # `~/.config/Pow/Hosts`.
-    @hostRoot   = env.POW_HOST_ROOT   ? libraryPath "Pow", "Hosts"
+    @hostRoot   = env.POW_HOST_ROOT   ? path.join @supportRoot, "Hosts"
 
     # `POW_LOG_ROOT`: path to the directory that Pow will use to store
     # its log files. Defaults to `~/.config/Pow/Logs`.
     @logRoot    = env.POW_LOG_ROOT    ? libraryPath "Pow", "Logs"
 
-    # `POW_RVM_PATH`: path to the rvm initialization script. Defaults
-    # to `~/.rvm/scripts/rvm`.
+    # `POW_RVM_PATH` (**deprecated**): path to the rvm initialization
+    # script. Defaults to `~/.rvm/scripts/rvm`.
     @rvmPath    = env.POW_RVM_PATH    ? path.join process.env.HOME, ".rvm/scripts/rvm"
 
     # ---
@@ -135,6 +141,15 @@ module.exports = class Configuration
   # Retrieve a `Logger` instance with the given `name`.
   getLogger: (name) ->
     @loggers[name] ||= new Logger path.join @logRoot, name + ".log"
+
+  # Globally disable or enable RVM deprecation notices by touching or
+  # removing the `~/Library/Application
+  # Support/Pow/.disableRvmDeprecationNotices` file.
+  disableRvmDeprecationNotices: ->
+    fs.writeFile path.join(@supportRoot, ".disableRvmDeprecationNotices"), ""
+
+  enableRvmDeprecationNotices: ->
+    fs.unlink path.join @supportRoot, ".disableRvmDeprecationNotices"
 
   # Search `hostRoot` for files, symlinks or directories matching the
   # domain specified by `host`. If a match is found, the matching domain
@@ -213,6 +228,8 @@ libraryPath = (args...) ->
 # `["basecamp"]`.
 getFilenamesForHost = (host, domain) ->
   host = host.toLowerCase()
+  domain = host.match(domain)?[0] ? "" if domain.test?
+
   if host.slice(-domain.length - 1) is ".#{domain}"
     parts  = host.slice(0, -domain.length - 1).split "."
     length = parts.length
